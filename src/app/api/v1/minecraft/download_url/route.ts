@@ -39,63 +39,119 @@ export async function GET(req: NextRequest, res: NextApiResponse) {
     );
   }
 
-  const update_id =
-    schemaResult.data.update_id ||
-    //                                              v Can safely ignore because zod will validate this
-    (await generateUpdateId(
-      schemaResult.data.version || '',
-      schemaResult.data.arch
-    ));
-  try {
-    if (!update_id) throw new Error('Version not found');
-
-    const xml = GenerateXML(update_id || '');
-
-    const data = await fetch(_downloadUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/soap+xml',
-      },
-      body: minify(xml),
-    });
-
-    if (!data.ok) throw new Error('Failed to fetch');
-
-    const parser = new XMLParser();
-    let dataObject = parser.parse(await data.text());
-
-    const result =
-      dataObject['s:Envelope']['s:Body']['GetExtendedUpdateInfo2Response'][
-        'GetExtendedUpdateInfo2Result'
-      ];
-    if (!result) throw new Error('No data found');
-
-    const url = result['FileLocations']['FileLocation'].find((x: any) =>
-      x['Url'].startsWith('http://tlu.dl.delivery.mp.microsoft.com/')
+  // Check for GDK support first
+    const version = schemaResult.data.version || await getVersionFromUpdateId(
+      schemaResult.data.update_id || 
+      (await generateUpdateId(
+        schemaResult.data.version || '',
+        schemaResult.data.arch
+      )) || ''
     );
-
-    if (!url && !url['Url']) throw new Error('No url found');
-
-    if (schemaResult.data.redirect) {
-      return NextResponse.redirect(url['Url']);
-    }
-    return NextResponse.json(
-      {
-        success: true,
-        url: url['Url'],
-      },
-      {
-        status: 200,
+    
+    if (version) {
+      const gdkData = await getGdkData(version);
+      const hasGdk = gdkData.release.hasOwnProperty(version) || gdkData.preview.hasOwnProperty(version);
+      
+      // If GDK support is available, return GDK URLs directly
+      if (hasGdk) {
+        let gdkUrls: string[] = [];
+        if (gdkData.release[version]) {
+          gdkUrls = gdkData.release[version];
+        } else if (gdkData.preview[version]) {
+          gdkUrls = gdkData.preview[version];
+        }
+        
+        if (gdkUrls.length > 0) {
+          if (schemaResult.data.redirect) {
+            return NextResponse.redirect(gdkUrls[0]);
+          }
+          return NextResponse.json(
+            {
+              success: true,
+              url: gdkUrls[0], // Return first GDK URL
+              gdk: true,
+            },
+            {
+              status: 200,
+            }
+          );
+        }
       }
-    );
+    }
+
+    // If no GDK support, use Microsoft update service
+    const update_id =
+      schemaResult.data.update_id ||
+      (await generateUpdateId(
+        schemaResult.data.version || '',
+        schemaResult.data.arch
+      ));
+      
+    try {
+      if (!update_id) throw new Error('Version not found');
+
+      const xml = GenerateXML(update_id || '');
+
+      const data = await fetch(_downloadUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/soap+xml',
+        },
+        body: minify(xml),
+      });
+
+      if (!data.ok) throw new Error('Failed to fetch');
+
+      const parser = new XMLParser();
+      let dataObject = parser.parse(await data.text());
+
+      const result =
+        dataObject['s:Envelope']['s:Body']['GetExtendedUpdateInfo2Response'][
+          'GetExtendedUpdateInfo2Result'
+        ];
+      if (!result) throw new Error('No data found');
+
+      const url = result['FileLocations']['FileLocation'].find((x: any) =>
+        x['Url'].startsWith('http://tlu.dl.delivery.mp.microsoft.com/')
+      );
+
+      if (!url && !url['Url']) throw new Error('No url found');
+      
+      if (schemaResult.data.redirect) {
+        return NextResponse.redirect(url['Url']);
+      }
+      return NextResponse.json(
+        {
+          success: true,
+          url: url['Url'],
+          gdk: false,
+        },
+        {
+          status: 200,
+        }
+      );
   } catch (err: any) {
     console.error(err);
+
+    // Try to get GDK info even if download failed
+    let gdkInfo = { gdk: false };
+    try {
+      const version = schemaResult.data.version || await getVersionFromUpdateId(update_id);
+      if (version) {
+        const gdkData = await getGdkData(version);
+        const hasGdk = gdkData.release.hasOwnProperty(version) || gdkData.preview.hasOwnProperty(version);
+        gdkInfo = { gdk: hasGdk };
+      }
+    } catch (gdkErr) {
+      console.error('Failed to get GDK info in error path:', gdkErr);
+    }
 
     // Return this even if redirect
     return NextResponse.json(
       {
         success: false,
         error: err.message,
+        ...gdkInfo,
       },
       {
         status: 500,
@@ -166,6 +222,54 @@ interface IW10Hashes {
   SHA256: string;
 }
 
+interface IGdkData {
+  release: Record<string, string[]>;
+  preview: Record<string, string[]>;
+}
+
+async function getGdkData(version: string): Promise<IGdkData> {
+  try {
+    // Fetch GDK metadata from GitHub repository
+    const response = await fetch('https://raw.githubusercontent.com/MinecraftBedrockArchiver/GdkLinks/refs/heads/master/urls.min.json');
+    if (response.ok) {
+      const data = await response.json() as IGdkData;
+      // Validate the structure before returning
+      if (data && typeof data === 'object' && 'release' in data && 'preview' in data) {
+        return data;
+      }
+    }
+  } catch (error) {
+    console.log('GDK metadata not available, using fallback data');
+  }
+  
+  // Return empty GDK data if external fetch fails
+  const emptyGdkData: IGdkData = {
+    release: {},
+    preview: {}
+  };
+  return emptyGdkData;
+}
+
+async function getVersionFromUpdateId(updateId: string): Promise<string | null> {
+  try {
+    const data = await fetch(
+      'https://raw.githubusercontent.com/MinecraftBedrockArchiver/Metadata/master/w10_meta.json'
+    ).then(res => res.json()) as IW10Meta;
+
+    for (const [version, versionData] of Object.entries(data)) {
+      for (const [arch, archData] of Object.entries(versionData.Archs)) {
+        if (archData?.UpdateIds?.includes(updateId)) {
+          return version;
+        }
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error('Failed to get version from update ID:', error);
+    return null;
+  }
+}
+
 async function generateUpdateId(version: string, arch: ISchema['arch']) {
   const data = (await fetch(
     'https://raw.githubusercontent.com/MinecraftBedrockArchiver/Metadata/master/w10_meta.json'
@@ -190,5 +294,5 @@ async function generateUpdateId(version: string, arch: ISchema['arch']) {
 }
 
 export const meta: IAPIRouteMetaData = {
-  desc: 'Returns a download url using update_id or version',
+  desc: 'Returns a download url using update_id or version. Includes GDK (Game Development Kit) support flag for versions 1.21.120.21 onwards.',
 };

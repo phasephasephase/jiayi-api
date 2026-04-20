@@ -43,3 +43,19 @@ export const schema = v(
 export type ISchema = z.infer<typeof schema>;
 
 export const schema_string = `version & arch OR update_id`;
+
+// Response schema for successful requests
+export const responseSchema = v(
+  z.object({
+    success: z.boolean(),
+    url: z.string().url().optional(),
+    gdk: z.boolean().describe('Indicates if GDK (Game Development Kit) links are available for this version'),
+    error: z.string().optional(),
+  }),
+  {
+    title: 'Response Schema',
+    description: 'API response schema for download_url endpoint'
+  }
+);
+
+export const response_schema_string = `success, url, gdk, error`;

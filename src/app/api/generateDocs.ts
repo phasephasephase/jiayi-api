@@ -63,7 +63,10 @@ export interface IAPIRouteData {
     schema?: z.AnyZodObject;
     // @ts-ignore
     schema_string?: string;
-    [key: string]: z.Schema;
+    response_schema?: z.AnyZodObject;
+    response_schema_string?: string;
+    // @ts-ignore idc about types rn man nothin makes sense bru its so dumb
+    [key: string]: z.Schema | string | undefined;
   };
 }
 export interface IAPIRouteMetaData {
@@ -160,6 +163,8 @@ async function generateSubroutes(api_path: string): Promise<IAPIRoute[]> {
         validation_schemas: {
           schema_string: data.validate?.schema_string,
           schema: data.validate?.schema,
+          response_schema_string: data.validate?.response_schema_string,
+          response_schema: data.validate?.responseSchema,
         },
       },
     };
