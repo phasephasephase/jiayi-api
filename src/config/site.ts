@@ -6,7 +6,7 @@ export const siteConfig = {
     return `${this.protocol}://${this.subdomain}.${this.domain}`;
   },
   get mainSiteUrl() {
-    return `${this.protocol}://${this.domain}`;
+    return `${this.protocol}://jiayi.${this.domain}`;
   },
   get docsUrl() {
     return `${this.baseUrl}/docs`;
