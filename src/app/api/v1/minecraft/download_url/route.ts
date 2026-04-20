@@ -39,7 +39,7 @@ export async function GET(req: NextRequest, res: NextApiResponse) {
     );
   }
 
-  // Check for GDK support first
+  // check for GDK support first
     const version = schemaResult.data.version || await getVersionFromUpdateId(
       schemaResult.data.update_id || 
       (await generateUpdateId(
