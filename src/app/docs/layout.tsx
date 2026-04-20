@@ -6,12 +6,12 @@ import { usePathname } from 'next/navigation';
 
 // Next.js stupid bcs theres no way to get pathname on the server even though its in the request LOL
 // export const metadata: Metadata = {
-//   title: 'API Docs - api.jiayi.software',
-//   description: 'Jiayi Software API docs',
+//   title: `API Docs - ${siteConfig.title}`,
+//   description: `${siteConfig.description} docs`,
 //   openGraph: {
-//     title: 'API Docs - api.jiayi.software',
-//     description: 'API docs for Jiayi Software',
-//     url: 'https://api.jiayi.software/docs',
+//     title: `API Docs - ${siteConfig.title}`,
+//     description: `API docs for Jiayi`,
+//     url: siteConfig.docsUrl,
 //     type: 'website',
 //     images:
 //       'https://cdn.discordapp.com/icons/1076188174407176212/c42955c501c842e06248b294a81bd0ab.png',
