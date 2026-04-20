@@ -136,7 +136,7 @@ export async function GET(req: NextRequest, res: NextApiResponse) {
     // Try to get GDK info even if download failed
     let gdkInfo = { gdk: false };
     try {
-      const version = schemaResult.data.version || await getVersionFromUpdateId(update_id);
+      const version = schemaResult.data.version || await getVersionFromUpdateId(update_id || '');
       if (version) {
         const gdkData = await getGdkData(version);
         const hasGdk = gdkData.release.hasOwnProperty(version) || gdkData.preview.hasOwnProperty(version);
